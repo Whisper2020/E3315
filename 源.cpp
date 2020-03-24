@@ -1,6 +1,4 @@
 #define _CRT_SECURE_NO_WARNINGS
-#define TRAFFIC_WARNING 1024*1024*1
-#define INTERVAL 5
 #include <WinSock2.h>
 #include "pcap.h"
 #include <iostream>
@@ -148,7 +146,7 @@ public:
 	}
 	ostream& print(ostream& os)
 	{
-		os <<"\n"<<INTERVAL<<" seconds\n";
+		os <<"\n"<<5<<" seconds\n";
 		os << "MACaddress," << "IPaddress," << "Len\n";
 		IPNode* pTemp = pHead;
 		while (pTemp)
@@ -168,10 +166,85 @@ NodeList destLink;
 long totalLen;
 /* IPv4 header */
 
-/* prototype of the packet handler */
-void packet_handler(u_char* param, const struct pcap_pkthdr* header, const u_char* pkt_data);
 
 #define FROM_NIC
+/* Callback function invoked by libpcap for every incoming packet */
+void packet_handler(u_char* param, const struct pcap_pkthdr* header, const u_char* pkt_data)
+{
+	struct tm* ltime;
+	char timestr[16];
+	mac_header* mh;
+	ip_header* ih;
+	ip_mac_address sim;
+	ip_mac_address dim;
+	udp_header* uh;
+	u_int ip_len;
+	u_short sport, dport;
+	time_t local_tv_sec;
+	int length = sizeof(mac_header) + sizeof(ip_header);
+	local_tv_sec = header->ts.tv_sec;
+	ltime = localtime(&local_tv_sec);
+	mh = (mac_header*)pkt_data;
+	ih = (ip_header*)(pkt_data + sizeof(mac_header));
+	sim.ip = ih->saddr;
+	sim.mac = mh->src_addr;
+	dim.ip = ih->daddr;
+	dim.mac = mh->dest_addr;
+	FILE* log;
+	freopen_s(&log, "Log\\test.csv", "ab", stdout);
+	printf("%d-%d-%d,", 1900 + ltime->tm_year, 1 + ltime->tm_mon, ltime->tm_mday);
+	strftime(timestr, sizeof timestr, "%H:%M:%S", ltime);
+	printf("%s,", timestr);
+	printf("%02X-", mh->src_addr.byte1);
+	printf("%02X-", mh->src_addr.byte2);
+	printf("%02X-", mh->src_addr.byte3);
+	printf("%02X-", mh->src_addr.byte4);
+	printf("%02X-", mh->src_addr.byte5);
+	printf("%02X", mh->src_addr.byte6);
+	printf(",");
+	printf("%d-%d-%d-%d",
+		ih->saddr.byte1,
+		ih->saddr.byte2,
+		ih->saddr.byte3,
+		ih->saddr.byte4
+	);
+	printf(",");
+	printf("%02X-", mh->dest_addr.byte1);
+	printf("%02X-", mh->dest_addr.byte2);
+	printf("%02X-", mh->dest_addr.byte3);
+	printf("%02X-", mh->dest_addr.byte4);
+	printf("%02X-", mh->dest_addr.byte5);
+	printf("%02X", mh->dest_addr.byte6);
+	printf(",");
+	printf("%d-%d-%d-%d",
+		ih->daddr.byte1,
+		ih->daddr.byte2,
+		ih->daddr.byte3,
+		ih->daddr.byte4);
+	printf(",");
+	printf("%d", header->len);
+	printf("\n");
+	sourceLink.addNode(sim, header->len);
+	destLink.addNode(dim, header->len);
+	totalLen += header->len;
+	if (totalLen >= 1024*1024)
+		cout << "Warning:   Traffic over "<<1<<" MB!\n";
+	if (local_tv_sec - beg >= 5)
+	{
+		FILE* srcLog;
+		freopen_s(&srcLog, "Log\\srcLog.csv", "ab", stdout);
+		sourceLink.print(cout);
+		FILE* destLog;
+		freopen_s(&destLog, "Log\\destLog.csv", "ab", stdout);
+		destLink.print(cout);
+		fclose(srcLog);
+		fclose(destLog);
+		beg = local_tv_sec;
+	}
+	fclose(log);
+	if ((_kbhit() && _getch() == 0x1b))
+		exit(0);
+}
 int main()
 {
 	pcap_if_t* alldevs;
@@ -278,18 +351,6 @@ int main()
 	pcap_freealldevs(alldevs);
 
 	time(&beg);            //获得当前时间
-	FILE* log;
-	freopen_s(&log, "Log\\log.csv", "wb", stdout);
-	printf("date,time,srcMAC,srcIP,destMAC,destIP,len\n");
-	fclose(log);
-	FILE* srcLog;
-	freopen_s(&srcLog, "Log\\srcLog.csv", "wb", stdout);
-	printf("srcLog\n");
-	fclose(srcLog);
-	FILE* destLog;
-	freopen_s(&destLog, "Log\\destLog.csv", "wb", stdout);
-	printf("destLog\n");
-	fclose(destLog);
 	/* start the capture */
 	pcap_loop(adhandle, 0, packet_handler, NULL);
 
@@ -311,85 +372,3 @@ int main()
 	return 0;
 }
 
-/* Callback function invoked by libpcap for every incoming packet */
-void packet_handler(u_char* param, const struct pcap_pkthdr* header, const u_char* pkt_data)
-{
-	struct tm* ltime;
-	char timestr[16];
-	mac_header* mh;
-	ip_header* ih;
-	ip_mac_address sim;
-	ip_mac_address dim;
-	udp_header* uh;
-	u_int ip_len;
-	u_short sport, dport;
-	time_t local_tv_sec;
-	int length = sizeof(mac_header) + sizeof(ip_header);
-	local_tv_sec = header->ts.tv_sec;
-	ltime = localtime(&local_tv_sec);
-	mh = (mac_header*)pkt_data;
-	ih = (ip_header*)(pkt_data + sizeof(mac_header));
-	sim.ip = ih->saddr;
-	sim.mac = mh->src_addr;
-	dim.ip = ih->daddr;
-	dim.mac = mh->dest_addr;
-	FILE* log;
-	freopen_s(&log, "Log\\log.csv", "ab", stdout);
-	printf("%d-%d-%d,", 1900 + ltime->tm_year, 1 + ltime->tm_mon, ltime->tm_mday);
-	strftime(timestr, sizeof timestr, "%H:%M:%S", ltime);
-	printf("%s,", timestr);
-	printf("%02X-", mh->src_addr.byte1);
-	printf("%02X-", mh->src_addr.byte2);
-	printf("%02X-", mh->src_addr.byte3);
-	printf("%02X-", mh->src_addr.byte4);
-	printf("%02X-", mh->src_addr.byte5);
-	printf("%02X", mh->src_addr.byte6);
-	printf(",");
-	printf("%d-%d-%d-%d",
-		ih->saddr.byte1,
-		ih->saddr.byte2,
-		ih->saddr.byte3,
-		ih->saddr.byte4
-	);
-	printf(",");
-	printf("%02X-", mh->dest_addr.byte1);
-	printf("%02X-", mh->dest_addr.byte2);
-	printf("%02X-", mh->dest_addr.byte3);
-	printf("%02X-", mh->dest_addr.byte4);
-	printf("%02X-", mh->dest_addr.byte5);
-	printf("%02X", mh->dest_addr.byte6);
-	printf(",");
-	printf("%d-%d-%d-%d",
-		ih->daddr.byte1,
-		ih->daddr.byte2,
-		ih->daddr.byte3,
-		ih->daddr.byte4);
-	printf(",");
-	printf("%d", header->len);
-	printf("\n");
-	sourceLink.addNode(sim, header->len);
-	destLink.addNode(dim, header->len);
-	freopen("CON", "w", stdout);
-	totalLen += header->len;
-	if (totalLen >= TRAFFIC_WARNING)
-		cout << "Warning:Traffic over "<<TRAFFIC_WARNING/1024/1024<<" MB!\n";
-	if (local_tv_sec - beg >= INTERVAL)
-	{
-		FILE* srcLog;
-		freopen_s(&srcLog, "Log\\srcLog.csv", "ab", stdout);
-		sourceLink.print(cout);
-		FILE* destLog;
-		freopen_s(&destLog, "Log\\destLog.csv", "ab", stdout);
-		//destLink.print(cout);
-		//cout << "srcIP:";
-		//sourceLink.print(cout);
-		//cout << "destIP:";
-		//destLink.print(cout);
-		fclose(srcLog);
-		fclose(destLog);
-		beg = local_tv_sec;
-	}
-	fclose(log);
-	if ((_kbhit() && _getch() == 0x1b))
-		exit(0);
-}
